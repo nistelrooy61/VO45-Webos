@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>VO45 IPTV</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@0.14.17/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0b0d12; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; display: -webkit-flex; height: 100vh; }
@@ -19,7 +20,7 @@
     .status-msg { padding: 16px; color: #9ca3af; font-size: 16px; }
     #player-wrap { flex: 1; -webkit-flex: 1; position: relative; background: #000; display: flex; display: -webkit-flex; align-items: center; -webkit-align-items: center; justify-content: center; -webkit-justify-content: center; }
     video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-    #osd { position: absolute; bottom: 30px; left: 30px; right: 30px; background: rgba(0,0,0,0.82); padding: 14px 22px; border-radius: 8px; font-size: 20px; display: none; z-index: 20; }
+    #osd { position: absolute; bottom: 30px; left: 30px; right: 30px; background: rgba(0,0,0,0.85); padding: 14px 22px; border-radius: 8px; font-size: 19px; display: none; z-index: 20; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -38,6 +39,9 @@
     var channels = [];
     var selectedIndex = 0;
     var hls = null;
+    var tsPlayer = null;
+    var currentStreamUrl = '';
+    var triedHttpFallback = false;
 
     var listEl = document.getElementById('list');
     var sidebarEl = document.getElementById('sidebar');
@@ -109,43 +113,65 @@
       }
     }
 
+    function cleanupPlayers() {
+      if (hls) {
+        try { hls.destroy(); } catch (e) {}
+        hls = null;
+      }
+      if (tsPlayer) {
+        try {
+          tsPlayer.pause();
+          tsPlayer.unload();
+          tsPlayer.detachMediaElement();
+          tsPlayer.destroy();
+        } catch (e) {}
+        tsPlayer = null;
+      }
+      videoEl.removeAttribute('src');
+      videoEl.load();
+    }
+
     function playNative(url, label) {
       videoEl.src = url;
       videoEl.load();
       var p = videoEl.play();
       if (p && typeof p.catch === 'function') {
-        p.catch(function(err) {
-          showOSD(label + ' - Oynatma hatası: ' + (err && err.message ? err.message : 'Desteklenmiyor'), true);
-        });
+        p.catch(function() {});
       }
     }
 
-    videoEl.onerror = function() {
-      var code = videoEl.error ? videoEl.error.code : '?';
-      showOSD('Video Hatası (Kod: ' + code + ') - Yayın formatı veya SSL uyumsuz.', true);
-    };
-
-    function playChannel(idx) {
-      var ch = channels[idx];
-      if (!ch) return;
-      var label = (idx + 1) + '. ' + ch.name;
-      showOSD(label + ' yükleniyor...', false);
-
-      if (hls) {
-        try { hls.destroy(); } catch (e) {}
-        hls = null;
-      }
-      videoEl.removeAttribute('src');
-      videoEl.load();
-
-      var isDirectTS = ch.url.toLowerCase().indexOf('.ts') !== -1 && ch.url.toLowerCase().indexOf('.m3u8') === -1;
-
-      if (!isDirectTS && typeof Hls !== 'undefined' && Hls.isSupported()) {
-        hls = new Hls({
+    function playWithTS(url, label) {
+      if (typeof mpegts !== 'undefined' && mpegts.getFeatureList().mseLivePlayback) {
+        tsPlayer = mpegts.createPlayer({
+          type: 'mpegts',
+          isLive: true,
+          url: url
+        }, {
           enableWorker: false,
-          maxBufferLength: 15
+          enableStashBuffer: false
         });
-        hls.loadSource(ch.url);
+        tsPlayer.attachMediaElement(videoEl);
+        tsPlayer.load();
+        var p = tsPlayer.play();
+        if (p && typeof p.catch === 'function') p.catch(function() {});
+        tsPlayer.on(mpegts.Events.ERROR, function(errType, errDetail) {
+          cleanupPlayers();
+          playNative(url, label);
+        });
+      } else {
+        playNative(url, label);
+      }
+    }
+
+    function startStream(url, label) {
+      currentStreamUrl = url;
+      cleanupPlayers();
+      var lower = url.toLowerCase();
+      var isM3U8 = lower.indexOf('.m3u8') !== -1;
+
+      if (isM3U8 && typeof Hls !== 'undefined' && Hls.isSupported()) {
+        hls = new Hls({ enableWorker: false, maxBufferLength: 15 });
+        hls.loadSource(url);
         hls.attachMedia(videoEl);
         hls.on(Hls.Events.MANIFEST_PARSED, function() {
           showOSD(label, false);
@@ -154,15 +180,52 @@
         });
         hls.on(Hls.Events.ERROR, function(event, data) {
           if (data && data.fatal) {
-            showOSD(label + ' - HLS Hatası: ' + data.details + ' (Yerel oynatıcı deneniyor...)', false);
-            try { hls.destroy(); } catch (e) {}
-            hls = null;
-            playNative(ch.url, label);
+            cleanupPlayers();
+            playWithTS(url, label);
+          }
+        });
+      } else if (!isM3U8 && typeof Hls !== 'undefined' && Hls.isSupported()) {
+        // Uzantısı belli olmayan linklerde önce HLS, olmazsa MPEG-TS dene
+        hls = new Hls({ enableWorker: false, maxBufferLength: 15 });
+        hls.loadSource(url);
+        hls.attachMedia(videoEl);
+        hls.on(Hls.Events.MANIFEST_PARSED, function() {
+          showOSD(label, false);
+          var p = videoEl.play();
+          if (p && typeof p.catch === 'function') p.catch(function() {});
+        });
+        hls.on(Hls.Events.ERROR, function(event, data) {
+          if (data && data.fatal) {
+            cleanupPlayers();
+            playWithTS(url, label);
           }
         });
       } else {
-        playNative(ch.url, label);
+        playWithTS(url, label);
       }
+    }
+
+    videoEl.onerror = function() {
+      var code = videoEl.error ? videoEl.error.code : '?';
+      if (!triedHttpFallback && currentStreamUrl.indexOf('https://') === 0) {
+        triedHttpFallback = true;
+        var httpUrl = 'http://' + currentStreamUrl.substring(8);
+        showOSD('HTTPS reddedildi, HTTP deneniyor...', false);
+        startStream(httpUrl, channels[selectedIndex].name);
+        return;
+      }
+      var proto = currentStreamUrl.split(':')[0];
+      var shortUrl = currentStreamUrl.length > 55 ? currentStreamUrl.substring(0, 55) + '...' : currentStreamUrl;
+      showOSD('Kod ' + code + ' (' + proto + ') | Link: ' + shortUrl, true);
+    };
+
+    function playChannel(idx) {
+      var ch = channels[idx];
+      if (!ch) return;
+      triedHttpFallback = false;
+      var label = (idx + 1) + '. ' + ch.name;
+      showOSD(label + ' bağlanıyor...', false);
+      startStream(ch.url, label);
     }
 
     function loadPlaylist(url, isFallback) {
