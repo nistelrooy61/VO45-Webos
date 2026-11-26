@@ -15,6 +15,11 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Generate IPTV Icons
+        run: |
+          convert -size 72x72 xc:"#0b0d12" -bordercolor "#ef4444" -border 4 -gravity center -fill "#facc15" -pointsize 24 -annotate +0+0 "IPTV" PNG32:icon.png
+          convert -size 118x118 xc:"#0b0d12" -bordercolor "#ef4444" -border 6 -gravity center -fill "#facc15" -pointsize 38 -annotate +0+0 "IPTV" PNG32:largeIcon.png
+
       - name: Install webOS CLI
         run: npm install -g @webos-tools/cli
 
