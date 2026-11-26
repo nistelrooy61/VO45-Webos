@@ -3,20 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <title>VO45 IPTV</title>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@0.14.17/dist/hls.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #0b0d12; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; height: 100vh; }
-    #sidebar { width: 420px; background: rgba(15, 18, 26, 0.95); border-right: 1px solid #222; display: flex; flex-direction: column; z-index: 10; transition: transform 0.25s; }
-    #sidebar.hidden { transform: translateX(-100%); position: absolute; height: 100%; }
+    body { background: #0b0d12; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; display: -webkit-flex; height: 100vh; }
+    #sidebar { width: 420px; background: rgba(15, 18, 26, 0.95); border-right: 1px solid #222; display: flex; display: -webkit-flex; flex-direction: column; -webkit-flex-direction: column; z-index: 10; transition: transform 0.25s; -webkit-transition: -webkit-transform 0.25s; }
+    #sidebar.hidden { transform: translateX(-100%); -webkit-transform: translateX(-100%); position: absolute; height: 100%; }
     #header { padding: 20px; font-size: 26px; font-weight: bold; border-bottom: 1px solid #222; }
     #header span.vo { color: #facc15; }
     #header span.num { color: #ef4444; }
-    #list { flex: 1; overflow-y: auto; padding: 10px; }
-    .item { display: flex; align-items: center; padding: 12px 14px; margin-bottom: 6px; border-radius: 8px; background: #151923; font-size: 18px; }
+    #list { flex: 1; -webkit-flex: 1; overflow-y: auto; padding: 10px; }
+    .item { display: flex; display: -webkit-flex; align-items: center; -webkit-align-items: center; padding: 12px 14px; margin-bottom: 6px; border-radius: 8px; background: #151923; font-size: 18px; cursor: pointer; }
     .item.active { background: #2563eb; font-weight: bold; }
     .item img { width: 36px; height: 36px; object-fit: contain; margin-right: 12px; background: #000; border-radius: 4px; }
-    #player-wrap { flex: 1; position: relative; background: #000; display: flex; align-items: center; justify-content: center; }
+    .status-msg { padding: 16px; color: #9ca3af; font-size: 16px; }
+    #player-wrap { flex: 1; -webkit-flex: 1; position: relative; background: #000; display: flex; display: -webkit-flex; align-items: center; -webkit-align-items: center; justify-content: center; -webkit-justify-content: center; }
     video { width: 100%; height: 100%; object-fit: contain; }
     #osd { position: absolute; bottom: 30px; left: 30px; background: rgba(0,0,0,0.75); padding: 14px 22px; border-radius: 8px; font-size: 22px; display: none; }
   </style>
@@ -24,7 +25,7 @@
 <body>
   <div id="sidebar">
     <div id="header"><span class="vo">VO</span><span class="num">45</span> IPTV</div>
-    <div id="list"></div>
+    <div id="list"><div class="status-msg">Kanal listesi yükleniyor...</div></div>
   </div>
   <div id="player-wrap">
     <video id="video" autoplay playsinline></video>
@@ -32,30 +33,35 @@
   </div>
 
   <script>
-    const M3U_URL = 'playlist.m3u'; // İstersen buraya GitHub Raw M3U linkini de yazabilirsin
-    let channels = [];
-    let selectedIndex = 0;
-    let hls = null;
+    var REMOTE_M3U_URL = 'https://raw.githubusercontent.com/nistelrooy61/VO45-webOS/main/playlist.m3u';
+    var LOCAL_M3U_URL = 'playlist.m3u';
+    var channels = [];
+    var selectedIndex = 0;
+    var hls = null;
 
-    const listEl = document.getElementById('list');
-    const sidebarEl = document.getElementById('sidebar');
-    const videoEl = document.getElementById('video');
-    const osdEl = document.getElementById('osd');
+    var listEl = document.getElementById('list');
+    var sidebarEl = document.getElementById('sidebar');
+    var videoEl = document.getElementById('video');
+    var osdEl = document.getElementById('osd');
+
+    function trimStr(str) {
+      return str.replace(/^\s+|\s+$/g, '');
+    }
 
     function parseM3U(text) {
-      const lines = text.split(/\r?\n/);
-      const result = [];
-      let current = null;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('#EXTINF:')) {
-          const logoMatch = trimmed.match(/tvg-logo="([^"]*)"/);
-          const nameParts = trimmed.split(',');
+      var lines = text.split(/\r?\n/);
+      var result = [];
+      var current = null;
+      for (var i = 0; i < lines.length; i++) {
+        var trimmed = trimStr(lines[i]);
+        if (trimmed.indexOf('#EXTINF:') === 0) {
+          var logoMatch = trimmed.match(/tvg-logo="([^"]*)"/);
+          var nameParts = trimmed.split(',');
           current = {
-            name: nameParts[nameParts.length - 1].trim(),
+            name: trimStr(nameParts[nameParts.length - 1]),
             logo: logoMatch ? logoMatch[1] : ''
           };
-        } else if (trimmed && !trimmed.startsWith('#') && current) {
+        } else if (trimmed && trimmed.indexOf('#') !== 0 && current) {
           current.url = trimmed;
           result.push(current);
           current = null;
@@ -66,69 +72,127 @@
 
     function renderList() {
       listEl.innerHTML = '';
-      channels.forEach((ch, idx) => {
-        const div = document.createElement('div');
-        div.className = 'item' + (idx === selectedIndex ? ' active' : '');
-        div.innerHTML = (ch.logo ? `<img src="${ch.logo}" onerror="this.style.display='none'">` : '') + `<span>${idx + 1}. ${ch.name}</span>`;
-        listEl.appendChild(div);
-      });
-      const activeEl = listEl.children[selectedIndex];
-      if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+      if (!channels.length) {
+        listEl.innerHTML = '<div class="status-msg">Kanal bulunamadı. playlist.m3u dosyasını kontrol edin.</div>';
+        return;
+      }
+      for (var i = 0; i < channels.length; i++) {
+        (function(idx) {
+          var ch = channels[idx];
+          var div = document.createElement('div');
+          div.className = 'item' + (idx === selectedIndex ? ' active' : '');
+          var logoHtml = ch.logo ? '<img src="' + ch.logo + '" onerror="this.style.display=\'none\'">' : '';
+          div.innerHTML = logoHtml + '<span>' + (idx + 1) + '. ' + ch.name + '</span>';
+          div.onclick = function() {
+            selectedIndex = idx;
+            renderList();
+            playChannel(idx);
+            sidebarEl.className = 'hidden';
+          };
+          listEl.appendChild(div);
+        })(i);
+      }
+      var activeEl = listEl.children[selectedIndex];
+      if (activeEl && activeEl.scrollIntoView) {
+        activeEl.scrollIntoView(false);
+      }
     }
 
     function showOSD(text) {
       osdEl.textContent = text;
       osdEl.style.display = 'block';
       clearTimeout(window.osdTimer);
-      window.osdTimer = setTimeout(() => { osdEl.style.display = 'none'; }, 3500);
+      window.osdTimer = setTimeout(function() {
+        osdEl.style.display = 'none';
+      }, 3500);
+    }
+
+    function playNative(url) {
+      videoEl.src = url;
+      videoEl.load();
+      var playPromise = videoEl.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(function() {});
+      }
     }
 
     function playChannel(idx) {
-      const ch = channels[idx];
+      var ch = channels[idx];
       if (!ch) return;
-      showOSD(`${idx + 1}. ${ch.name}`);
-      if (hls) { hls.destroy(); hls = null; }
+      showOSD((idx + 1) + '. ' + ch.name);
 
-      if (Hls.isSupported()) {
+      if (hls) {
+        try { hls.destroy(); } catch (e) {}
+        hls = null;
+      }
+
+      if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        playNative(ch.url);
+      } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         hls = new Hls();
         hls.loadSource(ch.url);
         hls.attachMedia(videoEl);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => videoEl.play().catch(() => {}));
-        hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) {
-            videoEl.src = ch.url;
-            videoEl.play().catch(() => {});
+        hls.on(Hls.Events.MANIFEST_PARSED, function() {
+          var p = videoEl.play();
+          if (p && typeof p.catch === 'function') p.catch(function() {});
+        });
+        hls.on(Hls.Events.ERROR, function(event, data) {
+          if (data && data.fatal) {
+            playNative(ch.url);
           }
         });
       } else {
-        videoEl.src = ch.url;
-        videoEl.play().catch(() => {});
+        playNative(ch.url);
       }
     }
 
-    document.addEventListener('keydown', (e) => {
+    function loadPlaylist(url, isFallback) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', url + (url.indexOf('http') === 0 ? '?t=' + new Date().getTime() : ''), true);
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+          if ((xhr.status >= 200 && xhr.status < 300) || (xhr.status === 0 && xhr.responseText)) {
+            channels = parseM3U(xhr.responseText);
+            renderList();
+            if (channels.length) {
+              playChannel(0);
+            }
+          } else if (!isFallback) {
+            loadPlaylist(LOCAL_M3U_URL, true);
+          } else {
+            listEl.innerHTML = '<div class="status-msg">Liste yüklenemedi (Hata: ' + xhr.status + ')</div>';
+          }
+        }
+      };
+      xhr.onerror = function() {
+        if (!isFallback) {
+          loadPlaylist(LOCAL_M3U_URL, true);
+        } else {
+          listEl.innerHTML = '<div class="status-msg">Bağlantı hatası: Liste alınamadı.</div>';
+        }
+      };
+      xhr.send();
+    }
+
+    document.addEventListener('keydown', function(e) {
+      var code = e.keyCode || e.which;
       if (!channels.length) return;
-      if (e.keyCode === 38) { // Yukarı
+
+      if (code === 38) { // Yukarı
         selectedIndex = (selectedIndex - 1 + channels.length) % channels.length;
         renderList();
-      } else if (e.keyCode === 40) { // Aşağı
+      } else if (code === 40) { // Aşağı
         selectedIndex = (selectedIndex + 1) % channels.length;
         renderList();
-      } else if (e.keyCode === 13) { // OK
+      } else if (code === 13) { // OK
         playChannel(selectedIndex);
-        sidebarEl.classList.add('hidden');
-      } else if (e.keyCode === 461 || e.keyCode === 27 || e.keyCode === 37) { // Geri / Sol
-        sidebarEl.classList.toggle('hidden');
+        sidebarEl.className = 'hidden';
+      } else if (code === 461 || code === 27 || code === 37) { // Geri / Sol
+        sidebarEl.className = (sidebarEl.className === 'hidden') ? '' : 'hidden';
       }
     });
 
-    fetch(M3U_URL)
-      .then(r => r.text())
-      .then(txt => {
-        channels = parseM3U(txt);
-        renderList();
-        if (channels.length) playChannel(0);
-      });
+    loadPlaylist(REMOTE_M3U_URL, false);
   </script>
 </body>
 </html>
