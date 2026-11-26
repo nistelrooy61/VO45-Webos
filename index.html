@@ -18,8 +18,8 @@
     .item img { width: 36px; height: 36px; object-fit: contain; margin-right: 12px; background: #000; border-radius: 4px; }
     .status-msg { padding: 16px; color: #9ca3af; font-size: 16px; }
     #player-wrap { flex: 1; -webkit-flex: 1; position: relative; background: #000; display: flex; display: -webkit-flex; align-items: center; -webkit-align-items: center; justify-content: center; -webkit-justify-content: center; }
-    video { width: 100%; height: 100%; object-fit: contain; }
-    #osd { position: absolute; bottom: 30px; left: 30px; background: rgba(0,0,0,0.75); padding: 14px 22px; border-radius: 8px; font-size: 22px; display: none; }
+    video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+    #osd { position: absolute; bottom: 30px; left: 30px; right: 30px; background: rgba(0,0,0,0.82); padding: 14px 22px; border-radius: 8px; font-size: 20px; display: none; z-index: 20; }
   </style>
 </head>
 <body>
@@ -73,7 +73,7 @@
     function renderList() {
       listEl.innerHTML = '';
       if (!channels.length) {
-        listEl.innerHTML = '<div class="status-msg">Kanal bulunamadı. playlist.m3u dosyasını kontrol edin.</div>';
+        listEl.innerHTML = '<div class="status-msg">Kanal bulunamadı.</div>';
         return;
       }
       for (var i = 0; i < channels.length; i++) {
@@ -98,51 +98,70 @@
       }
     }
 
-    function showOSD(text) {
+    function showOSD(text, keepOpen) {
       osdEl.textContent = text;
       osdEl.style.display = 'block';
       clearTimeout(window.osdTimer);
-      window.osdTimer = setTimeout(function() {
-        osdEl.style.display = 'none';
-      }, 3500);
-    }
-
-    function playNative(url) {
-      videoEl.src = url;
-      videoEl.load();
-      var playPromise = videoEl.play();
-      if (playPromise && typeof playPromise.catch === 'function') {
-        playPromise.catch(function() {});
+      if (!keepOpen) {
+        window.osdTimer = setTimeout(function() {
+          osdEl.style.display = 'none';
+        }, 4500);
       }
     }
+
+    function playNative(url, label) {
+      videoEl.src = url;
+      videoEl.load();
+      var p = videoEl.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(function(err) {
+          showOSD(label + ' - Oynatma hatası: ' + (err && err.message ? err.message : 'Desteklenmiyor'), true);
+        });
+      }
+    }
+
+    videoEl.onerror = function() {
+      var code = videoEl.error ? videoEl.error.code : '?';
+      showOSD('Video Hatası (Kod: ' + code + ') - Yayın formatı veya SSL uyumsuz.', true);
+    };
 
     function playChannel(idx) {
       var ch = channels[idx];
       if (!ch) return;
-      showOSD((idx + 1) + '. ' + ch.name);
+      var label = (idx + 1) + '. ' + ch.name;
+      showOSD(label + ' yükleniyor...', false);
 
       if (hls) {
         try { hls.destroy(); } catch (e) {}
         hls = null;
       }
+      videoEl.removeAttribute('src');
+      videoEl.load();
 
-      if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        playNative(ch.url);
-      } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-        hls = new Hls();
+      var isDirectTS = ch.url.toLowerCase().indexOf('.ts') !== -1 && ch.url.toLowerCase().indexOf('.m3u8') === -1;
+
+      if (!isDirectTS && typeof Hls !== 'undefined' && Hls.isSupported()) {
+        hls = new Hls({
+          enableWorker: false,
+          maxBufferLength: 15
+        });
         hls.loadSource(ch.url);
         hls.attachMedia(videoEl);
         hls.on(Hls.Events.MANIFEST_PARSED, function() {
+          showOSD(label, false);
           var p = videoEl.play();
           if (p && typeof p.catch === 'function') p.catch(function() {});
         });
         hls.on(Hls.Events.ERROR, function(event, data) {
           if (data && data.fatal) {
-            playNative(ch.url);
+            showOSD(label + ' - HLS Hatası: ' + data.details + ' (Yerel oynatıcı deneniyor...)', false);
+            try { hls.destroy(); } catch (e) {}
+            hls = null;
+            playNative(ch.url, label);
           }
         });
       } else {
-        playNative(ch.url);
+        playNative(ch.url, label);
       }
     }
 
@@ -159,17 +178,11 @@
             }
           } else if (!isFallback) {
             loadPlaylist(LOCAL_M3U_URL, true);
-          } else {
-            listEl.innerHTML = '<div class="status-msg">Liste yüklenemedi (Hata: ' + xhr.status + ')</div>';
           }
         }
       };
       xhr.onerror = function() {
-        if (!isFallback) {
-          loadPlaylist(LOCAL_M3U_URL, true);
-        } else {
-          listEl.innerHTML = '<div class="status-msg">Bağlantı hatası: Liste alınamadı.</div>';
-        }
+        if (!isFallback) loadPlaylist(LOCAL_M3U_URL, true);
       };
       xhr.send();
     }
@@ -178,16 +191,16 @@
       var code = e.keyCode || e.which;
       if (!channels.length) return;
 
-      if (code === 38) { // Yukarı
+      if (code === 38) {
         selectedIndex = (selectedIndex - 1 + channels.length) % channels.length;
         renderList();
-      } else if (code === 40) { // Aşağı
+      } else if (code === 40) {
         selectedIndex = (selectedIndex + 1) % channels.length;
         renderList();
-      } else if (code === 13) { // OK
+      } else if (code === 13) {
         playChannel(selectedIndex);
         sidebarEl.className = 'hidden';
-      } else if (code === 461 || code === 27 || code === 37) { // Geri / Sol
+      } else if (code === 461 || code === 27 || code === 37) {
         sidebarEl.className = (sidebarEl.className === 'hidden') ? '' : 'hidden';
       }
     });
