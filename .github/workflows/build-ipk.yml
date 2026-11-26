@@ -15,13 +15,31 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Generate IPTV Icons
+      - name: Generate Valid PNG Icons
         run: |
-          convert -size 72x72 xc:"#0b0d12" -bordercolor "#ef4444" -border 4 -gravity center -fill "#facc15" -pointsize 24 -annotate +0+0 "IPTV" PNG32:icon.png
-          convert -size 118x118 xc:"#0b0d12" -bordercolor "#ef4444" -border 6 -gravity center -fill "#facc15" -pointsize 38 -annotate +0+0 "IPTV" PNG32:largeIcon.png
+          python3 -c "
+          import zlib, struct
+          def make_png(w, h, filename):
+              raw = b''
+              for y in range(h):
+                  row = bytearray([0])
+                  for x in range(w):
+                      if x < 4 or x >= w-4 or y < 4 or y >= h-4:
+                          row.extend([239, 68, 68, 255])
+                      else:
+                          row.extend([250, 204, 21, 255])
+                  raw += bytes(row)
+              def chunk(tag, data):
+                  return struct.pack('!I', len(data)) + tag + data + struct.pack('!I', zlib.crc32(tag + data) & 0xffffffff)
+              ihdr = struct.pack('!IIBBBBB', w, h, 8, 6, 0, 0, 0)
+              with open(filename, 'wb') as f:
+                  f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
+          make_png(80, 80, 'icon.png')
+          make_png(130, 130, 'largeIcon.png')
+          "
 
       - name: Install webOS CLI
-        run: npm install -g @webos-tools/cli
+        run: npm install -g @webosose/ares-cli || npm install -g @webos-tools/cli
 
       - name: Package IPK
         run: |
