@@ -1,0 +1,31 @@
+name: Build webOS IPK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install webOS CLI
+        run: npm install -g @webos-tools/cli
+
+      - name: Package IPK
+        run: |
+          mkdir -p dist
+          ares-package . -o dist --no-minify
+
+      - name: Upload IPK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vo45-webos-ipk
+          path: dist/*.ipk
+          
