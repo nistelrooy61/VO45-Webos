@@ -59,6 +59,7 @@
     var retryCount = 0;
     var digitBuffer = '';
     var digitTimer = null;
+    var connectTimer = null;
 
     var listEl = document.getElementById('list');
     var sidebarEl = document.getElementById('sidebar');
@@ -132,30 +133,8 @@
       }
     }
 
-    function startStream(url, mimeType) {
-      videoEl.pause();
-      videoEl.innerHTML = '';
-      videoEl.removeAttribute('src');
-      videoEl.load();
-
-      var srcEl = document.createElement('source');
-      srcEl.src = url;
-      if (mimeType) srcEl.type = mimeType;
-      videoEl.appendChild(srcEl);
-      videoEl.load();
-
-      var p = videoEl.play();
-      if (p && typeof p.catch === 'function') p.catch(function() {});
-    }
-
-    videoEl.onplaying = function() {
-      retryCount = 0;
-      var ch = channels[playingIndex];
-      showOSD((playingIndex + 1) + '. ' + (ch ? ch.name : ''), true);
-    };
-
-    videoEl.onerror = function() {
-      var code = videoEl.error ? videoEl.error.code : '?';
+    function handleStreamFailure(code) {
+      clearTimeout(connectTimer);
       var ch = channels[playingIndex];
       var label = (playingIndex + 1) + '. ' + (ch ? ch.name : '');
 
@@ -169,10 +148,45 @@
         showOSD(label + ' yeniden bağlanıyor...', false);
         setTimeout(function() {
           playChannel(playingIndex, false);
-        }, 2000);
+        }, 1500);
       } else {
-        showOSD(label + ' - Yayın açılamadı (Kod: ' + code + ')', false);
+        showOSD(label + ' - Yayın açılamadı (' + code + ')', false);
       }
+    }
+
+    function startStream(url, mimeType) {
+      clearTimeout(connectTimer);
+      videoEl.pause();
+      videoEl.innerHTML = '';
+      videoEl.removeAttribute('src');
+      videoEl.load();
+
+      var srcEl = document.createElement('source');
+      srcEl.src = url;
+      if (mimeType) srcEl.type = mimeType;
+      videoEl.appendChild(srcEl);
+      videoEl.load();
+
+      var p = videoEl.play();
+      if (p && typeof p.catch === 'function') p.catch(function() {});
+
+      connectTimer = setTimeout(function() {
+        if (videoEl.readyState < 3) {
+          handleStreamFailure('Zaman aşımı');
+        }
+      }, 8000);
+    }
+
+    videoEl.onplaying = function() {
+      clearTimeout(connectTimer);
+      retryCount = 0;
+      var ch = channels[playingIndex];
+      showOSD((playingIndex + 1) + '. ' + (ch ? ch.name : ''), true);
+    };
+
+    videoEl.onerror = function() {
+      var code = videoEl.error ? videoEl.error.code : '?';
+      handleStreamFailure('Kod: ' + code);
     };
 
     function playChannel(idx, resetRetry) {
