@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <title>VO45 IPTV</title>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@0.14.17/dist/hls.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0b0d12; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; display: -webkit-flex; height: 100vh; }
@@ -19,7 +18,7 @@
     .status-msg { padding: 16px; color: #9ca3af; font-size: 16px; }
     #player-wrap { flex: 1; -webkit-flex: 1; position: relative; background: #000; display: flex; display: -webkit-flex; align-items: center; -webkit-align-items: center; justify-content: center; -webkit-justify-content: center; }
     video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-    #osd { position: absolute; bottom: 25px; left: 25px; right: 25px; background: rgba(0, 0, 0, 0.88); border: 1px solid #333; padding: 14px 20px; border-radius: 8px; font-size: 18px; color: #f3f4f6; z-index: 30; line-height: 1.4; word-break: break-all; }
+    #osd { position: absolute; bottom: 25px; left: 25px; right: 25px; background: rgba(0, 0, 0, 0.9); border: 1px solid #444; padding: 14px 20px; border-radius: 8px; font-size: 18px; color: #f3f4f6; z-index: 30; line-height: 1.4; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -47,9 +46,9 @@
 
     var REMOTE_M3U_URL = 'https://raw.githubusercontent.com/nistelrooy61/VO45-webOS/main/playlist.m3u';
     var LOCAL_M3U_URL = 'playlist.m3u';
+    var TV_WORKER_HOST = 'http://vo45tv.dpdns.org';
     var channels = [];
     var selectedIndex = 0;
-    var hls = null;
 
     var listEl = document.getElementById('list');
     var sidebarEl = document.getElementById('sidebar');
@@ -60,10 +59,11 @@
     }
 
     function prepareTvUrl(rawUrl) {
-      if (rawUrl.indexOf('vavoo-resolver') !== -1 && rawUrl.indexOf('tv=1') === -1) {
-        return rawUrl + (rawUrl.indexOf('?') !== -1 ? '&tv=1' : '?tv=1');
+      var u = rawUrl.replace(/^https?:\/\/vavoo-resolver\.[^\/]+/i, TV_WORKER_HOST);
+      if (u.indexOf('vo45tv.dpdns.org') !== -1 && u.indexOf('tv=1') === -1) {
+        u = u + (u.indexOf('?') !== -1 ? '&tv=1' : '?tv=1');
       }
-      return rawUrl;
+      return u;
     }
 
     function parseM3U(text) {
@@ -116,24 +116,6 @@
       }
     }
 
-    function resetVideo() {
-      if (hls) {
-        try { hls.destroy(); } catch (e) {}
-        hls = null;
-      }
-      videoEl.pause();
-      videoEl.removeAttribute('src');
-      videoEl.load();
-    }
-
-    function playNative(url, label) {
-      resetVideo();
-      videoEl.src = url;
-      videoEl.load();
-      var p = videoEl.play();
-      if (p && typeof p.catch === 'function') p.catch(function() {});
-    }
-
     videoEl.onplaying = function() {
       var ch = channels[selectedIndex];
       showOSD((selectedIndex + 1) + '. ' + (ch ? ch.name : ''), true);
@@ -141,7 +123,8 @@
 
     videoEl.onerror = function() {
       var code = videoEl.error ? videoEl.error.code : '?';
-      showOSD('Oynatma Hatası (Kod: ' + code + ')', false);
+      var ch = channels[selectedIndex];
+      showOSD((selectedIndex + 1) + '. ' + (ch ? ch.name : '') + ' - Oynatma Hatası (Kod: ' + code + ')', false);
     };
 
     function playChannel(idx) {
@@ -149,37 +132,16 @@
       if (!ch) return;
       var streamUrl = prepareTvUrl(ch.url);
       var label = (idx + 1) + '. ' + ch.name;
-      showOSD(label + ' yükleniyor...', false);
+      showOSD(label + ' bağlanıyor...', false);
 
-      resetVideo();
+      videoEl.pause();
+      videoEl.removeAttribute('src');
+      videoEl.load();
 
-      if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-        hls = new Hls({
-          enableWorker: false,
-          maxBufferLength: 15,
-          manifestLoadingTimeOut: 15000,
-          levelLoadingTimeOut: 15000
-        });
-        hls.loadSource(streamUrl);
-        hls.attachMedia(videoEl);
-        hls.on(Hls.Events.MANIFEST_PARSED, function() {
-          var p = videoEl.play();
-          if (p && typeof p.catch === 'function') p.catch(function() {});
-        });
-        hls.on(Hls.Events.ERROR, function(event, data) {
-          if (data && data.fatal) {
-            var status = (data.response && data.response.code) ? ' HTTP:' + data.response.code : '';
-            showOSD(label + ' - HLS Hatası: ' + data.details + status, false);
-            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-              hls.recoverMediaError();
-            } else {
-              playNative(streamUrl, label);
-            }
-          }
-        });
-      } else {
-        playNative(streamUrl, label);
-      }
+      videoEl.src = streamUrl;
+      videoEl.load();
+      var p = videoEl.play();
+      if (p && typeof p.catch === 'function') p.catch(function() {});
     }
 
     function loadPlaylist(url, isFallback) {
