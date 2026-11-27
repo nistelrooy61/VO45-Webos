@@ -7,6 +7,5 @@
   "title": "VO45 IPTV",
   "icon": "icon.png",
   "largeIcon": "largeIcon.png",
-  "resolution": "1920x1080",
-  "requiredACG": []
+  "resolution": "1920x1080"
 }
