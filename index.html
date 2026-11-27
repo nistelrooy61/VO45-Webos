@@ -18,8 +18,8 @@
     .status-msg { padding: 16px; color: #9ca3af; font-size: 16px; }
     #player-wrap { flex: 1; -webkit-flex: 1; position: relative; background: #000; display: flex; display: -webkit-flex; align-items: center; -webkit-align-items: center; justify-content: center; -webkit-justify-content: center; }
     video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-    #num-box { position: absolute; top: 28px; right: 32px; background: rgba(15, 18, 26, 0.92); border: 2px solid #facc15; color: #facc15; font-size: 38px; font-weight: bold; padding: 10px 24px; border-radius: 10px; z-index: 40; display: none; letter-spacing: 2px; }
-    #osd { position: absolute; bottom: 25px; left: 25px; right: 25px; background: rgba(0, 0, 0, 0.92); border: 1px solid #444; padding: 14px 20px; border-radius: 8px; font-size: 18px; color: #f3f4f6; z-index: 30; line-height: 1.4; word-break: break-all; }
+    #osd { position: absolute; top: 28px; right: 32px; max-width: 70%; background: rgba(11, 13, 18, 0.9); border: 1px solid #374151; padding: 16px 26px; border-radius: 12px; font-size: 28px; font-weight: bold; color: #f9fafb; z-index: 30; line-height: 1.35; text-align: right; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65); }
+    #num-box { position: absolute; top: 108px; right: 32px; background: rgba(15, 18, 26, 0.94); border: 2px solid #facc15; color: #facc15; font-size: 40px; font-weight: bold; padding: 10px 26px; border-radius: 12px; z-index: 40; display: none; letter-spacing: 2px; }
   </style>
 </head>
 <body>
@@ -29,8 +29,8 @@
   </div>
   <div id="player-wrap">
     <video id="video" autoplay playsinline></video>
-    <div id="num-box"></div>
     <div id="osd">Başlatılıyor...</div>
+    <div id="num-box"></div>
   </div>
 
   <script>
@@ -247,13 +247,11 @@
       if (!channels.length) return;
       var isMenuHidden = (sidebarEl.className === 'hidden');
 
-      // Rakam tuşları (0-9)
       if (code >= 48 && code <= 57) {
         handleDigit(String(code - 48));
         return;
       }
 
-      // Kumanda Kanal + (PageUp: 33) ve Kanal - (PageDown: 34)
       if (code === 33) {
         stepChannel(1);
         return;
@@ -263,7 +261,6 @@
         return;
       }
 
-      // Yukarı (38) ve Aşağı (40) ok tuşları
       if (code === 38) {
         if (isMenuHidden) {
           stepChannel(1);
@@ -283,7 +280,6 @@
         return;
       }
 
-      // OK tuşu (13)
       if (code === 13) {
         if (digitBuffer) {
           commitDigitJump();
@@ -297,7 +293,6 @@
         return;
       }
 
-      // Sol (37) / Sağ (39) ok tuşları ve Geri tuşu (461 / 27)
       if (code === 37 || code === 39 || code === 461 || code === 27) {
         sidebarEl.className = isMenuHidden ? '' : 'hidden';
         if (!isMenuHidden) renderList();
