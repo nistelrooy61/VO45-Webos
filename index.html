@@ -18,7 +18,7 @@
     .status-msg { padding: 16px; color: #9ca3af; font-size: 16px; }
     #player-wrap { flex: 1; -webkit-flex: 1; position: relative; background: #000; display: flex; display: -webkit-flex; align-items: center; -webkit-align-items: center; justify-content: center; -webkit-justify-content: center; }
     video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-    #osd { position: absolute; bottom: 25px; left: 25px; right: 25px; background: rgba(0, 0, 0, 0.9); border: 1px solid #444; padding: 14px 20px; border-radius: 8px; font-size: 18px; color: #f3f4f6; z-index: 30; line-height: 1.4; word-break: break-all; }
+    #osd { position: absolute; bottom: 25px; left: 25px; right: 25px; background: rgba(0, 0, 0, 0.92); border: 1px solid #444; padding: 14px 20px; border-radius: 8px; font-size: 17px; color: #f3f4f6; z-index: 30; line-height: 1.4; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -49,6 +49,7 @@
     var TV_WORKER_HOST = 'http://vo45tv.dpdns.org';
     var channels = [];
     var selectedIndex = 0;
+    var currentStreamUrl = '';
 
     var listEl = document.getElementById('list');
     var sidebarEl = document.getElementById('sidebar');
@@ -59,7 +60,12 @@
     }
 
     function prepareTvUrl(rawUrl) {
-      var u = rawUrl.replace(/^https?:\/\/vavoo-resolver\.[^\/]+/i, TV_WORKER_HOST);
+      var u = rawUrl;
+      if (u.indexOf('workers.dev') !== -1) {
+        u = u.replace(/^https?:\/\/[^\/]+/i, TV_WORKER_HOST);
+      } else if (u.indexOf('vavoo.to') !== -1 || u.indexOf('kool.to') !== -1 || u.indexOf('voltop.net') !== -1) {
+        u = TV_WORKER_HOST + '/?url=' + encodeURIComponent(u);
+      }
       if (u.indexOf('vo45tv.dpdns.org') !== -1 && u.indexOf('tv=1') === -1) {
         u = u + (u.indexOf('?') !== -1 ? '&tv=1' : '?tv=1');
       }
@@ -124,22 +130,27 @@
     videoEl.onerror = function() {
       var code = videoEl.error ? videoEl.error.code : '?';
       var ch = channels[selectedIndex];
-      showOSD((selectedIndex + 1) + '. ' + (ch ? ch.name : '') + ' - Oynatma Hatası (Kod: ' + code + ')', false);
+      showOSD((selectedIndex + 1) + '. ' + (ch ? ch.name : '') + ' | Kod: ' + code + ' | URL: ' + currentStreamUrl, false);
     };
 
     function playChannel(idx) {
       var ch = channels[idx];
       if (!ch) return;
-      var streamUrl = prepareTvUrl(ch.url);
+      currentStreamUrl = prepareTvUrl(ch.url);
       var label = (idx + 1) + '. ' + ch.name;
-      showOSD(label + ' bağlanıyor...', false);
+      showOSD(label + ' -> ' + currentStreamUrl, false);
 
       videoEl.pause();
+      videoEl.innerHTML = '';
       videoEl.removeAttribute('src');
       videoEl.load();
 
-      videoEl.src = streamUrl;
+      var srcEl = document.createElement('source');
+      srcEl.src = currentStreamUrl;
+      srcEl.type = 'application/vnd.apple.mpegurl';
+      videoEl.appendChild(srcEl);
       videoEl.load();
+
       var p = videoEl.play();
       if (p && typeof p.catch === 'function') p.catch(function() {});
     }
