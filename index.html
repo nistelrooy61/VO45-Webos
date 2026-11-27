@@ -18,8 +18,12 @@
     .status-msg { padding: 16px; color: #9ca3af; font-size: 16px; }
     #player-wrap { flex: 1; -webkit-flex: 1; position: relative; background: #000; display: flex; display: -webkit-flex; align-items: center; -webkit-align-items: center; justify-content: center; -webkit-justify-content: center; }
     video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-    #osd { position: absolute; top: 28px; right: 32px; max-width: 70%; background: rgba(11, 13, 18, 0.9); border: 1px solid #374151; padding: 16px 26px; border-radius: 12px; font-size: 28px; font-weight: bold; color: #f9fafb; z-index: 30; line-height: 1.35; text-align: right; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65); }
-    #num-box { position: absolute; top: 108px; right: 32px; background: rgba(15, 18, 26, 0.94); border: 2px solid #facc15; color: #facc15; font-size: 40px; font-weight: bold; padding: 10px 26px; border-radius: 12px; z-index: 40; display: none; letter-spacing: 2px; }
+    #osd { position: absolute; top: 28px; right: 32px; width: 240px; height: 240px; background: rgba(11, 13, 18, 0.92); border: 2px solid #374151; padding: 16px; border-radius: 16px; font-size: 24px; font-weight: bold; color: #f9fafb; z-index: 30; line-height: 1.3; text-align: center; display: flex; display: -webkit-flex; flex-direction: column; -webkit-flex-direction: column; align-items: center; -webkit-align-items: center; justify-content: center; -webkit-justify-content: center; word-wrap: break-word; overflow: hidden; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7); }
+    #osd img { width: 64px; height: 64px; object-fit: contain; margin-bottom: 10px; border-radius: 8px; background: #000; }
+    #osd .osd-num { color: #facc15; font-size: 28px; margin-bottom: 6px; }
+    #osd .osd-name { font-size: 21px; color: #fff; }
+    #osd .osd-sub { font-size: 15px; color: #9ca3af; margin-top: 6px; font-weight: normal; }
+    #num-box { position: absolute; top: 284px; right: 32px; width: 240px; text-align: center; background: rgba(15, 18, 26, 0.94); border: 2px solid #facc15; color: #facc15; font-size: 40px; font-weight: bold; padding: 10px 16px; border-radius: 12px; z-index: 40; display: none; letter-spacing: 2px; }
   </style>
 </head>
 <body>
@@ -37,9 +41,19 @@
     var osdEl = document.getElementById('osd');
     var numBoxEl = document.getElementById('num-box');
 
-    function showOSD(text, autoHide) {
-      osdEl.textContent = text;
-      osdEl.style.display = 'block';
+    function showOSD(text, autoHide, chObj, numLabel) {
+      if (chObj) {
+        var logoPart = chObj.logo ? '<img src="' + chObj.logo + '" onerror="this.style.display=\'none\'">' : '';
+        var subPart = text ? '<div class="osd-sub">' + text + '</div>' : '';
+        osdEl.innerHTML = logoPart +
+          '<div class="osd-num">' + numLabel + '</div>' +
+          '<div class="osd-name">' + chObj.name + '</div>' +
+          subPart;
+      } else {
+        osdEl.textContent = text;
+      }
+      osdEl.style.display = 'flex';
+      osdEl.style.display = '-webkit-flex';
       clearTimeout(window.osdTimer);
       if (autoHide) {
         window.osdTimer = setTimeout(function() {
@@ -60,6 +74,7 @@
     var digitBuffer = '';
     var digitTimer = null;
     var connectTimer = null;
+    var streamStarted = false;
 
     var listEl = document.getElementById('list');
     var sidebarEl = document.getElementById('sidebar');
@@ -133,29 +148,40 @@
       }
     }
 
+    function markStreamPlaying() {
+      if (streamStarted) return;
+      streamStarted = true;
+      clearTimeout(connectTimer);
+      retryCount = 0;
+      var ch = channels[playingIndex];
+      showOSD('', true, ch, '#' + (playingIndex + 1));
+    }
+
     function handleStreamFailure(code) {
+      if (streamStarted) return;
       clearTimeout(connectTimer);
       var ch = channels[playingIndex];
-      var label = (playingIndex + 1) + '. ' + (ch ? ch.name : '');
+      var numLabel = '#' + (playingIndex + 1);
 
       if (currentMode === 'ts') {
         currentMode = 'm3u8';
         var m3uUrl = buildTvUrl(currentTargetUrl, 'm3u8');
-        showOSD(label + ' (HLS deneniyor)...', false);
+        showOSD('HLS deneniyor...', false, ch, numLabel);
         startStream(m3uUrl, 'application/vnd.apple.mpegurl');
       } else if (retryCount < 1) {
         retryCount++;
-        showOSD(label + ' yeniden bağlanıyor...', false);
+        showOSD('Yeniden bağlanıyor...', false, ch, numLabel);
         setTimeout(function() {
           playChannel(playingIndex, false);
         }, 1500);
       } else {
-        showOSD(label + ' - Yayın açılamadı (' + code + ')', false);
+        showOSD('Yayın açılamadı (' + code + ')', false, ch, numLabel);
       }
     }
 
     function startStream(url, mimeType) {
       clearTimeout(connectTimer);
+      streamStarted = false;
       videoEl.pause();
       videoEl.innerHTML = '';
       videoEl.removeAttribute('src');
@@ -171,20 +197,21 @@
       if (p && typeof p.catch === 'function') p.catch(function() {});
 
       connectTimer = setTimeout(function() {
-        if (videoEl.readyState < 3) {
+        if (!streamStarted && videoEl.currentTime === 0) {
           handleStreamFailure('Zaman aşımı');
         }
-      }, 8000);
+      }, 10000);
     }
 
-    videoEl.onplaying = function() {
-      clearTimeout(connectTimer);
-      retryCount = 0;
-      var ch = channels[playingIndex];
-      showOSD((playingIndex + 1) + '. ' + (ch ? ch.name : ''), true);
+    videoEl.onplaying = markStreamPlaying;
+    videoEl.ontimeupdate = function() {
+      if (videoEl.currentTime > 0) {
+        markStreamPlaying();
+      }
     };
 
     videoEl.onerror = function() {
+      if (streamStarted) return;
       var code = videoEl.error ? videoEl.error.code : '?';
       handleStreamFailure('Kod: ' + code);
     };
@@ -200,7 +227,7 @@
       currentTargetUrl = ch.url;
       currentMode = 'ts';
       var tsUrl = buildTvUrl(ch.url, 'ts');
-      showOSD((idx + 1) + '. ' + ch.name + ' bağlanıyor...', false);
+      showOSD('Bağlanıyor...', false, ch, '#' + (idx + 1));
       startStream(tsUrl, 'video/mp2t;mediaOption=' + encodeURIComponent(JSON.stringify({ mediaTransportType: 'RAW' })));
     }
 
@@ -221,7 +248,7 @@
         playChannel(num - 1, true);
         sidebarEl.className = 'hidden';
       } else {
-        showOSD('Geçersiz kanal numarası: ' + num, true);
+        showOSD('Geçersiz kanal: ' + num, true);
       }
     }
 
